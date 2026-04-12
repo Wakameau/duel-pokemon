@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Duel de Base</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div id="app">
+    <div id="homeScreen" class="screen active">
+      <div class="panel home-panel">
+        <h1>Duel de Base</h1>
+        <p class="subtitle">Pokémon 1v1 en salon</p>
+
+        <input id="playerName" type="text" maxlength="20" placeholder="Ton pseudo" />
+
+        <div class="home-actions">
+          <button id="createRoomBtn">Créer un salon</button>
+        </div>
+
+        <div class="join-box">
+          <input id="roomCodeInput" type="text" maxlength="5" placeholder="Code salon" />
+          <button id="joinRoomBtn">Rejoindre</button>
+        </div>
+
+        <p id="homeMessage" class="message"></p>
+      </div>
+    </div>
+
+    <div id="roomScreen" class="screen">
+      <div class="topbar">
+  <div class="room-code-box">
+    <strong>Salon :</strong>
+    <span id="roomCodeDisplay">-</span>
+    <button id="copyCodeBtn">📋</button>
+  </div>
+
+  <div id="roomStatus">En attente...</div>
+</div>
+
+      <div class="players-row">
+        <div class="player-card" id="playerCard1">
+          <div class="player-header">
+            <div class="player-avatar">A</div>
+            <div class="player-name" id="player1Name">Joueur 1</div>
+          </div>
+
+          <div class="stats-list" id="player1StatsList"></div>
+
+          <div class="total-box">
+            <div class="total-title">Total</div>
+            <div class="total-score" id="player1Score">0</div>
+          </div>
+
+          <div class="player-footer">
+            Choisis une statistique ci-dessous
+          </div>
+        </div>
+
+        <div class="center-card">
+          <div id="roundLabel">Tour 1</div>
+          <div id="suddenDeathLabel" class="badge hidden">MORT SUBITE</div>
+
+          <div class="pokemon-box">
+            <img id="pokemonSprite" src="" alt="pokemon" />
+            <h2 id="pokemonName">En attente...</h2>
+            <div class="vs-text">VS</div>
+            <div class="waiting-text">En attente</div>
+          </div>
+
+          <div id="revealZone" class="reveal-zone"></div>
+
+          <div class="controls">
+            <button id="startGameBtn">Lancer la partie</button>
+            <button id="restartGameBtn" class="hidden">Rejouer</button>
+          </div>
+        </div>
+
+        <div class="player-card" id="playerCard2">
+          <div class="player-header">
+            <div class="player-avatar">B</div>
+            <div class="player-name" id="player2Name">Joueur 2</div>
+          </div>
+
+          <div class="stats-list" id="player2StatsList"></div>
+
+          <div class="total-box">
+            <div class="total-title">Total</div>
+            <div class="total-score" id="player2Score">0</div>
+          </div>
+
+          <div class="player-footer">
+            Les valeurs gagnées s'affichent ici
+          </div>
+        </div>
+      </div>
+
+      <div class="stats-board">
+        <button class="stat-btn" data-stat="hp">HP</button>
+        <button class="stat-btn" data-stat="attack">ATTAQUE</button>
+        <button class="stat-btn" data-stat="defense">DÉFENSE</button>
+        <button class="stat-btn" data-stat="spAttack">ATTAQUE SPÉ</button>
+        <button class="stat-btn" data-stat="spDefense">DÉFENSE SPÉ</button>
+        <button class="stat-btn" data-stat="speed">VITESSE</button>
+      </div>
+
+      <div id="gameMessage" class="message center-message"></div>
+    </div>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="script.js"></script>
+</body>
+</html>
