@@ -1,164 +1,75 @@
 const fs = require("fs");
 const path = require("path");
 
-const API_BASE = "https://pokeapi.co/api/v2";
+const OUTPUT = path.join(__dirname, "../data/pokemon.json");
 
-const REGIONAL_SUFFIXES = ["-alola", "-galar", "-hisui", "-paldea"];
+const MAX_POKEMON = 1025; // gen 1 → 9
 
-const EXCLUDED_PARTS = [
-  "-mega",
-  "-gmax",
-  "-totem",
-  "-starter",
-  "-build",
-  "-mode",
-  "-cloak",
-  "-school",
-  "-busted",
-  "-eternamax",
-  "-crowned",
-  "-origin",
-  "-complete",
-  "-ultra",
-  "-therian",
-  "-ash",
-  "-blade",
-  "-shield",
-  "-sunny",
-  "-rainy",
-  "-snowy",
-  "-resolute",
-  "-pirouette",
-  "-ordinary",
-  "-aria",
-  "-ice",
-  "-shadow",
-  "-white",
-  "-black",
-  "-zen",
-  "-trash",
-  "-sandy",
-  "-plant",
-  "-male",
-  "-female"
-];
-
-function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-async function fetchJson(url) {
+async function fetchJSON(url) {
   const res = await fetch(url);
-  if (!res.ok) {
-    throw new Error(`HTTP ${res.status} sur ${url}`);
-  }
+  if (!res.ok) throw new Error("Erreur API: " + url);
   return res.json();
 }
 
-function shouldKeepPokemonName(apiName) {
-  const isRegional = REGIONAL_SUFFIXES.some((suffix) => apiName.endsWith(suffix));
-  if (isRegional) return true;
+function extractGen(genName) {
+  // ex: generation-iii → 3
+  const map = {
+    "generation-i": 1,
+    "generation-ii": 2,
+    "generation-iii": 3,
+    "generation-iv": 4,
+    "generation-v": 5,
+    "generation-vi": 6,
+    "generation-vii": 7,
+    "generation-viii": 8,
+    "generation-ix": 9
+  };
 
-  return !EXCLUDED_PARTS.some((part) => apiName.includes(part));
+  return map[genName] || 1;
 }
 
-function getStat(stats, statName) {
-  const stat = stats.find((s) => s.stat.name === statName);
-  return stat ? stat.base_stat : 0;
+function getFrenchName(names) {
+  const fr = names.find((n) => n.language.name === "fr");
+  return fr ? fr.name : names[0].name;
 }
 
-function getRegionalLabel(apiName) {
-  if (apiName.endsWith("-alola")) return "d'Alola";
-  if (apiName.endsWith("-galar")) return "de Galar";
-  if (apiName.endsWith("-hisui")) return "de Hisui";
-  if (apiName.endsWith("-paldea")) return "de Paldea";
-  return "";
-}
+async function build() {
+  const list = [];
 
-function getFrenchSpeciesName(speciesData) {
-  const fr = speciesData.names.find((entry) => entry.language.name === "fr");
-  if (fr?.name) return fr.name;
-
-  const fallback = speciesData.name || "Pokemon";
-  return fallback
-    .replace(/-/g, " ")
-    .replace(/\b\w/g, (c) => c.toUpperCase());
-}
-
-async function buildPokemonList() {
-  console.log("Récupération de la liste complète...");
-  const listData = await fetchJson(`${API_BASE}/pokemon?limit=100000&offset=0`);
-
-  const entries = listData.results.filter((entry) => shouldKeepPokemonName(entry.name));
-  const pokemonList = [];
-
-  for (let i = 0; i < entries.length; i++) {
-    const entry = entries[i];
-
+  for (let id = 1; id <= MAX_POKEMON; id++) {
     try {
-      const pokemonData = await fetchJson(entry.url);
+      console.log("Pokémon", id);
 
-      const artwork =
-        pokemonData?.sprites?.other?.["official-artwork"]?.front_default ||
-        pokemonData?.sprites?.front_default;
+      const [pokemon, species] = await Promise.all([
+        fetchJSON(`https://pokeapi.co/api/v2/pokemon/${id}`),
+        fetchJSON(`https://pokeapi.co/api/v2/pokemon-species/${id}`)
+      ]);
 
-      if (!artwork) {
-        continue;
-      }
+      const name = getFrenchName(species.names);
+      const gen = extractGen(species.generation.name);
 
-      const speciesData = await fetchJson(pokemonData.species.url);
+      list.push({
+        id,
+        name,
+        gen,
+        sprite:
+          pokemon.sprites.other["official-artwork"].front_default ||
+          pokemon.sprites.front_default,
 
-      const baseFrenchName = getFrenchSpeciesName(speciesData);
-      const regionalLabel = getRegionalLabel(pokemonData.name);
-      const finalName = regionalLabel
-        ? `${baseFrenchName} ${regionalLabel}`
-        : baseFrenchName;
-
-      pokemonList.push({
-        id: pokemonData.id,
-        apiName: pokemonData.name,
-        name: finalName,
-        sprite: artwork,
-        hp: getStat(pokemonData.stats, "hp"),
-        attack: getStat(pokemonData.stats, "attack"),
-        defense: getStat(pokemonData.stats, "defense"),
-        spAttack: getStat(pokemonData.stats, "special-attack"),
-        spDefense: getStat(pokemonData.stats, "special-defense"),
-        speed: getStat(pokemonData.stats, "speed")
+        hp: pokemon.stats[0].base_stat,
+        attack: pokemon.stats[1].base_stat,
+        defense: pokemon.stats[2].base_stat,
+        spAttack: pokemon.stats[3].base_stat,
+        spDefense: pokemon.stats[4].base_stat,
+        speed: pokemon.stats[5].base_stat
       });
-
-      if ((i + 1) % 25 === 0) {
-        console.log(`${i + 1}/${entries.length} traités`);
-      }
-
-      await sleep(35);
-    } catch (error) {
-      console.error(`Erreur sur ${entry.name}: ${error.message}`);
+    } catch (err) {
+      console.log("Erreur Pokémon", id);
     }
   }
 
-  pokemonList.sort((a, b) => {
-    if (a.id !== b.id) return a.id - b.id;
-    return a.name.localeCompare(b.name, "fr");
-  });
-
-  return pokemonList;
+  fs.writeFileSync(OUTPUT, JSON.stringify(list, null, 2), "utf-8");
+  console.log("✅ pokemon.json généré !");
 }
 
-async function main() {
-  const pokemonList = await buildPokemonList();
-
-  const outDir = path.join(__dirname, "..", "data");
-  const outFile = path.join(outDir, "pokemon.json");
-
-  fs.mkdirSync(outDir, { recursive: true });
-  fs.writeFileSync(outFile, JSON.stringify(pokemonList, null, 2), "utf-8");
-
-  console.log(`Terminé : ${pokemonList.length} Pokémon sauvegardés`);
-  console.log(`Fichier : ${outFile}`);
-}
-
-main().catch((error) => {
-  console.error(error);
-  process.exit(1);
-});
+build();

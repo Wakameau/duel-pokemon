@@ -9,42 +9,58 @@ const createRoomBtn = document.getElementById("createRoomBtn");
 const joinRoomBtn = document.getElementById("joinRoomBtn");
 const homeMessage = document.getElementById("homeMessage");
 
+const gameModeSelect = document.getElementById("gameModeSelect");
+const genButtons = [...document.querySelectorAll(".gen-toggle")];
+const selectAllGensBtn = document.getElementById("selectAllGensBtn");
+const clearAllGensBtn = document.getElementById("clearAllGensBtn");
+
 const roomCodeDisplay = document.getElementById("roomCodeDisplay");
+const copyCodeBtn = document.getElementById("copyCodeBtn");
 const roomStatus = document.getElementById("roomStatus");
+const roomModeDisplay = document.getElementById("roomModeDisplay");
+const roomGensDisplay = document.getElementById("roomGensDisplay");
 
-const player1Name = document.getElementById("player1Name");
-const player2Name = document.getElementById("player2Name");
-const player1Score = document.getElementById("player1Score");
-const player2Score = document.getElementById("player2Score");
+const teamAPlayers = document.getElementById("teamAPlayers");
+const teamBPlayers = document.getElementById("teamBPlayers");
+const playersGrid = document.getElementById("playersGrid");
+const ffaLayout = document.getElementById("ffaLayout");
 
-const player1StatsList = document.getElementById("player1StatsList");
-const player2StatsList = document.getElementById("player2StatsList");
-
-const pokemonSprite = document.getElementById("pokemonSprite");
-const pokemonName = document.getElementById("pokemonName");
 const roundLabel = document.getElementById("roundLabel");
 const suddenDeathLabel = document.getElementById("suddenDeathLabel");
+const pokemonSprite = document.getElementById("pokemonSprite");
+const pokemonName = document.getElementById("pokemonName");
+const centerSubText = document.getElementById("centerSubText");
 const revealZone = document.getElementById("revealZone");
-const gameMessage = document.getElementById("gameMessage");
 
 const startGameBtn = document.getElementById("startGameBtn");
 const restartGameBtn = document.getElementById("restartGameBtn");
-const statButtons = [...document.querySelectorAll(".stat-btn")];
-const copyCodeBtn = document.getElementById("copyCodeBtn");
+const gameMessage = document.getElementById("gameMessage");
 
-const STAT_ORDER = [
-  { key: "hp", label: "HP" },
-  { key: "attack", label: "ATTAQUE" },
-  { key: "spAttack", label: "ATTAQUE SPÉ" },
-  { key: "defense", label: "DÉFENSE" },
-  { key: "spDefense", label: "DÉFENSE SPÉ" },
-  { key: "speed", label: "VITESSE" }
-];
+const leftSide = document.getElementById("leftSide");
+const rightSide = document.getElementById("rightSide");
+
+const duelOverlay = document.getElementById("duelOverlay");
+const duelLeftName = document.getElementById("duelLeftName");
+const duelRightName = document.getElementById("duelRightName");
+const duelLeftScore = document.getElementById("duelLeftScore");
+const duelRightScore = document.getElementById("duelRightScore");
+
+const STAT_ORDER = ["hp", "attack", "defense", "spAttack", "spDefense", "speed"];
+
+const STAT_LABELS = {
+  hp: "HP",
+  attack: "ATTAQUE",
+  defense: "DÉFENSE",
+  spAttack: "ATTAQUE SPÉ",
+  spDefense: "DÉFENSE SPÉ",
+  speed: "VITESSE"
+};
 
 let mySocketId = null;
-let myRoomState = null;
-let activeAnimations = {};
-let animationLockUntil = 0;
+let currentRoom = null;
+let selectedGens = [1, 2, 3, 4, 5, 6, 7, 8, 9];
+let lastTurnAnimatedStats = [];
+let duelOverlayTimeout = null;
 
 socket.on("connect", () => {
   mySocketId = socket.id;
@@ -56,388 +72,751 @@ function showScreen(screen) {
   screen.classList.add("active");
 }
 
-function setMessage(text, target = gameMessage) {
-  target.textContent = text || "";
+function setMessage(el, text, isError = false) {
+  el.textContent = text || "";
+  el.classList.toggle("error", !!isError);
 }
 
-function getPlayerByIndex(index) {
-  if (!myRoomState || !myRoomState.players[index]) return null;
-  return myRoomState.players[index];
+function getPlayerName() {
+  return (playerNameInput.value || "").trim().slice(0, 20) || "Joueur";
 }
 
-function isHost() {
-  return !!myRoomState && myRoomState.hostId === mySocketId;
+function getSelectedGenerations() {
+  const gens = genButtons
+    .filter((btn) => btn.classList.contains("active"))
+    .map((btn) => Number(btn.dataset.gen));
+
+  return gens.length ? gens : [1, 2, 3, 4, 5, 6, 7, 8, 9];
 }
 
-function resetBoardVisual() {
-  revealZone.innerHTML = "";
-}
-
-function getAnimKey(playerId, statKey) {
-  return `${playerId}:${statKey}`;
-}
-
-function animateCount(element, target, onDone = null) {
-  if (typeof target !== "number") {
-    element.textContent = target;
-    if (onDone) onDone();
-    return;
-  }
-
-  if (target <= 1) {
-    element.textContent = target;
-    if (onDone) onDone();
-    return;
-  }
-
-  let current = 1;
-  element.textContent = current;
-
-  const speed = target >= 120 ? 14 : target >= 80 ? 18 : 24;
-
-  const interval = setInterval(() => {
-    current += 1;
-    element.textContent = current;
-
-    if (current >= target) {
-      clearInterval(interval);
-      element.textContent = target;
-      if (onDone) onDone();
-    }
-  }, speed);
-}
-
-function createStatRow(statKey, statLabel, value = null, playerId = null) {
-  const row = document.createElement("div");
-  row.className = "stat-row";
-  row.dataset.statKey = statKey;
-
-  const label = document.createElement("div");
-  label.className = "stat-label";
-  label.textContent = `${statLabel}:`;
-
-  const box = document.createElement("div");
-  box.className = "stat-value-box";
-
-  const animKey = playerId ? getAnimKey(playerId, statKey) : null;
-  const animatedValue = animKey ? activeAnimations[animKey] : undefined;
-
-  const valueEl = document.createElement("div");
-
-  if (animatedValue !== undefined) {
-    valueEl.className = "stat-value";
-    valueEl.textContent = animatedValue;
-  } else if (value !== null && value !== undefined) {
-    valueEl.className = "stat-value";
-    valueEl.textContent = value;
-  } else {
-    valueEl.className = "stat-empty";
-    valueEl.textContent = "-";
-  }
-
-  box.appendChild(valueEl);
-  row.appendChild(label);
-  row.appendChild(box);
-
-  return row;
-}
-
-function renderPlayerStatsColumns() {
-  if (!myRoomState) return;
-
-  const p1 = myRoomState.players[0];
-  const p2 = myRoomState.players[1];
-
-  const p1Values = myRoomState.playerStatValues?.[p1?.id] || {};
-  const p2Values = myRoomState.playerStatValues?.[p2?.id] || {};
-
-  player1StatsList.innerHTML = "";
-  player2StatsList.innerHTML = "";
-
-  for (const stat of STAT_ORDER) {
-    const p1Value = Object.prototype.hasOwnProperty.call(p1Values, stat.key)
-      ? p1Values[stat.key]
-      : null;
-
-    const p2Value = Object.prototype.hasOwnProperty.call(p2Values, stat.key)
-      ? p2Values[stat.key]
-      : null;
-
-    player1StatsList.appendChild(
-      createStatRow(stat.key, stat.label, p1Value, p1?.id)
-    );
-
-    player2StatsList.appendChild(
-      createStatRow(stat.key, stat.label, p2Value, p2?.id)
-    );
-  }
-}
-
-function renderUsedStats() {
-  const myChoice = myRoomState?.choices?.[mySocketId] || null;
-  const myUsedStats = myRoomState?.usedStatsByPlayer?.[mySocketId] || [];
-
-  statButtons.forEach((btn) => {
-    const stat = btn.dataset.stat;
-    btn.classList.remove("used", "selected");
-
-    const disabledBecauseUsed =
-      !myRoomState?.suddenDeath && myUsedStats.includes(stat);
-    const iAlreadyChose = !!myChoice;
-
-    if (disabledBecauseUsed) {
-      btn.classList.add("used");
-    }
-
-    if (myChoice === stat) {
-      btn.classList.add("selected");
-    }
-
-    btn.disabled = !myRoomState?.started || disabledBecauseUsed || iAlreadyChose;
+function updateGenButtonsUI() {
+  genButtons.forEach((btn) => {
+    const gen = Number(btn.dataset.gen);
+    btn.classList.toggle("active", selectedGens.includes(gen));
   });
 }
 
-function renderRoom(room) {
-  myRoomState = room;
-  showScreen(roomScreen);
+function formatGenerations(gens = []) {
+  if (!gens.length || gens.length === 9) return "Toutes";
+  return gens.map((g) => `GEN ${g}`).join(", ");
+}
 
-  roomCodeDisplay.textContent = room.code;
-  roomStatus.textContent = room.started ? "Partie en cours" : "Salon en attente";
+function getPokemonImage(pokemon) {
+  if (!pokemon) return "";
+  return pokemon.image || pokemon.sprite || pokemon.artwork || pokemon.front || "";
+}
 
-  const p1 = getPlayerByIndex(0);
-  const p2 = getPlayerByIndex(1);
+function getPokemonDisplayName(pokemon) {
+  if (!pokemon) return "En attente...";
+  return pokemon.name || pokemon.nom || "Pokémon";
+}
 
-  player1Name.textContent = p1 ? p1.name : "Joueur 1";
-  player2Name.textContent = p2 ? p2.name : "Joueur 2";
-  player1Score.textContent = p1 ? p1.score : "0";
-  player2Score.textContent = p2 ? p2.score : "0";
+function isHost(room) {
+  return room && room.hostId === mySocketId;
+}
 
-  roundLabel.textContent = room.suddenDeath ? "Mort subite" : `Tour ${room.round}`;
-  suddenDeathLabel.classList.toggle("hidden", !room.suddenDeath);
+function getMyPlayer(room) {
+  if (!room) return null;
+  return room.players.find((p) => p.id === mySocketId) || null;
+}
 
-  if (room.currentPokemon) {
-    pokemonSprite.src = room.currentPokemon.sprite;
+function getOpponentPlayer(room) {
+  if (!room) return null;
+  return room.players.find((p) => p.id !== mySocketId) || null;
+}
+
+function getMyChosenStat(room) {
+  if (!room || !room.choices) return null;
+  return room.choices[mySocketId] || null;
+}
+
+function isMyTurn(room) {
+  if (!room || !room.started) return false;
+
+  if (
+    (room.mode === "ffa" || room.mode === "2v2") &&
+    room.suddenDeath &&
+    Array.isArray(room.suddenDeathPlayerIds) &&
+    room.suddenDeathPlayerIds.length
+  ) {
+    return room.suddenDeathPlayerIds.includes(mySocketId);
+  }
+
+  return !!getMyPlayer(room);
+}
+
+function isJustRevealed(playerId, statKey) {
+  return lastTurnAnimatedStats.some(
+    (item) => item.playerId === playerId && item.statKey === statKey
+  );
+}
+
+function playerWasJustRevealed(playerId) {
+  return lastTurnAnimatedStats.some((item) => item.playerId === playerId);
+}
+
+function animateCountUp(element, endValue, duration = 700) {
+  const finalValue = Number(endValue ?? element.dataset.finalValue ?? 0) || 0;
+  const startTime = performance.now();
+
+  element.textContent = "0";
+  element.classList.add("animating-number");
+
+  function update(now) {
+    const elapsed = now - startTime;
+    const progress = Math.min(elapsed / duration, 1);
+    const eased = 1 - Math.pow(1 - progress, 3);
+    const currentValue = Math.round(finalValue * eased);
+
+    element.textContent = String(currentValue);
+
+    if (progress < 1) {
+      requestAnimationFrame(update);
+    } else {
+      element.textContent = String(finalValue);
+      setTimeout(() => {
+        element.classList.remove("animating-number");
+      }, 120);
+    }
+  }
+
+  requestAnimationFrame(update);
+}
+
+function animateBigScore(element, endValue, duration = 1200) {
+  const finalValue = Number(endValue) || 0;
+  const startTime = performance.now();
+
+  element.textContent = "0";
+  element.classList.add("pop");
+
+  setTimeout(() => {
+    element.classList.remove("pop");
+  }, 320);
+
+  function update(now) {
+    const elapsed = now - startTime;
+    const progress = Math.min(elapsed / duration, 1);
+    const eased = 1 - Math.pow(1 - progress, 3);
+    const currentValue = Math.round(finalValue * eased);
+
+    element.textContent = String(currentValue);
+
+    if (progress < 1) {
+      requestAnimationFrame(update);
+    } else {
+      element.textContent = String(finalValue);
+    }
+  }
+
+  requestAnimationFrame(update);
+}
+
+function showDuelOverlay(leftName, leftValue, rightName, rightValue, options = {}) {
+  if (!duelOverlay) return;
+
+  const {
+    leftDuration = 1300,
+    rightDuration = 1300,
+    hideAfter = 2100
+  } = options;
+
+  if (duelOverlayTimeout) {
+    clearTimeout(duelOverlayTimeout);
+    duelOverlayTimeout = null;
+  }
+
+  duelLeftName.textContent = leftName || "Joueur A";
+  duelRightName.textContent = rightName || "Joueur B";
+  duelLeftScore.textContent = "0";
+  duelRightScore.textContent = "0";
+
+  duelOverlay.classList.remove("hidden");
+
+  requestAnimationFrame(() => {
+    animateBigScore(duelLeftScore, leftValue, leftDuration);
+    animateBigScore(duelRightScore, rightValue, rightDuration);
+  });
+
+  duelOverlayTimeout = setTimeout(() => {
+    duelOverlay.classList.add("hidden");
+  }, hideAfter);
+}
+
+function queueRevealAnimations(data) {
+  if (!data?.picks?.length) return;
+
+  data.picks.forEach((pick, index) => {
+    setTimeout(() => {
+      const statEl = document.querySelector(
+        `.stat-value[data-player-id="${pick.playerId}"][data-stat-key="${pick.statKey}"]`
+      );
+
+      if (statEl) {
+        animateCountUp(statEl, pick.value, 650);
+      }
+
+      const scoreEl = document.querySelector(
+        `.total-score[data-player-id="${pick.playerId}"]`
+      );
+
+      if (scoreEl) {
+        animateCountUp(scoreEl, pick.newScore, 700);
+      }
+    }, index * 220);
+  });
+
+  setTimeout(() => {
+    lastTurnAnimatedStats = [];
+    if (currentRoom) {
+      renderPlayers(currentRoom);
+    }
+  }, data.picks.length * 220 + 950);
+}
+
+function createPlayerCard(room, player, side = "left") {
+  const card = document.createElement("div");
+  card.className = "player-card";
+
+  if (player.id === mySocketId) {
+    card.classList.add("me");
+  }
+
+  if (!player.connected) {
+    card.classList.add("disconnected");
+  }
+
+  const header = document.createElement("div");
+  header.className = "player-header";
+
+  const name = document.createElement("div");
+  name.className = "player-name";
+  name.textContent = player.name;
+
+  const score = document.createElement("div");
+  score.className = "player-score";
+  score.textContent = `${player.score} pts`;
+
+  header.appendChild(name);
+  header.appendChild(score);
+  card.appendChild(header);
+
+  const statsList = document.createElement("div");
+  statsList.className = "stats-list";
+
+  const usedStats = room.usedStatsByPlayer?.[player.id] || [];
+  const values = room.playerStatValues?.[player.id] || {};
+  const alreadyPicked = !!room.choices?.[player.id];
+  const isMe = player.id === mySocketId;
+  const myTurn = isMyTurn(room);
+
+  STAT_ORDER.forEach((statKey) => {
+    const row = document.createElement("div");
+    row.className = "stat-row";
+
+    const label = document.createElement("div");
+    label.className = "stat-label";
+    label.textContent = `${STAT_LABELS[statKey]} :`;
+
+    const valueBox = document.createElement("div");
+    valueBox.className = "stat-value-box";
+
+    const isUsed = usedStats.includes(statKey);
+    const statValue = values[statKey];
+    const chosenNow = room.choices?.[player.id] === statKey;
+
+    if (isMe) {
+      if (typeof statValue !== "undefined") {
+        const justRevealed = isJustRevealed(player.id, statKey);
+
+        const value = document.createElement("div");
+        value.className = "stat-value";
+        value.textContent = justRevealed ? "0" : String(statValue);
+        value.dataset.playerId = player.id;
+        value.dataset.statKey = statKey;
+        value.dataset.finalValue = statValue;
+        valueBox.appendChild(value);
+      } else if (room.started && myTurn && !alreadyPicked && !isUsed) {
+        const btn = document.createElement("button");
+        btn.className = "stat-pick-btn";
+        btn.textContent = "";
+        btn.addEventListener("click", () => {
+          socket.emit("chooseStat", { statKey });
+        });
+        valueBox.appendChild(btn);
+      } else if (chosenNow) {
+        const hidden = document.createElement("div");
+        hidden.className = "stat-hidden";
+        valueBox.appendChild(hidden);
+      } else if (isUsed) {
+        const hidden = document.createElement("div");
+        hidden.className = "stat-hidden";
+        valueBox.appendChild(hidden);
+      } else {
+        const disabled = document.createElement("div");
+        disabled.className = "stat-disabled";
+        valueBox.appendChild(disabled);
+      }
+    } else {
+      if (typeof statValue !== "undefined") {
+        const justRevealed = isJustRevealed(player.id, statKey);
+
+        const value = document.createElement("div");
+        value.className = "stat-value";
+        value.textContent = justRevealed ? "0" : String(statValue);
+        value.dataset.playerId = player.id;
+        value.dataset.statKey = statKey;
+        value.dataset.finalValue = statValue;
+        valueBox.appendChild(value);
+      } else {
+        const empty = document.createElement("div");
+        empty.className = "stat-empty";
+        empty.textContent = "-";
+        valueBox.appendChild(empty);
+      }
+    }
+
+    if (side === "right") {
+      row.appendChild(valueBox);
+      row.appendChild(label);
+      row.classList.add("reverse");
+    } else {
+      row.appendChild(label);
+      row.appendChild(valueBox);
+    }
+
+    statsList.appendChild(row);
+  });
+
+  card.appendChild(statsList);
+
+  const totalBox = document.createElement("div");
+  totalBox.className = "total-box";
+
+  const totalTitle = document.createElement("div");
+  totalTitle.className = "total-title";
+  totalTitle.textContent = "Total";
+
+  const totalScore = document.createElement("div");
+  totalScore.className = "total-score";
+  totalScore.textContent = playerWasJustRevealed(player.id) ? "0" : String(player.score);
+  totalScore.dataset.playerId = player.id;
+  totalScore.dataset.finalValue = player.score;
+
+  totalBox.appendChild(totalTitle);
+  totalBox.appendChild(totalScore);
+  card.appendChild(totalBox);
+
+  return card;
+}
+
+function render1v1(room) {
+  ffaLayout.classList.add("hidden");
+  leftSide.classList.remove("hidden");
+  rightSide.classList.remove("hidden");
+
+  teamAPlayers.innerHTML = "";
+  teamBPlayers.innerHTML = "";
+
+  const leftPlayer = room.players.find((p) => p.id === mySocketId) || room.players[0];
+  const rightPlayer = room.players.find((p) => p.id !== leftPlayer?.id) || room.players[1];
+
+  if (leftPlayer) {
+    teamAPlayers.appendChild(createPlayerCard(room, leftPlayer, "left"));
+  }
+
+  if (rightPlayer) {
+    teamBPlayers.appendChild(createPlayerCard(room, rightPlayer, "right"));
+  }
+}
+
+function render2v2(room) {
+  ffaLayout.classList.add("hidden");
+  leftSide.classList.remove("hidden");
+  rightSide.classList.remove("hidden");
+
+  teamAPlayers.innerHTML = "";
+  teamBPlayers.innerHTML = "";
+
+  const team1 = room.players.slice(0, 2);
+  const team2 = room.players.slice(2, 4);
+
+  const myInTeam1 = team1.some((p) => p.id === mySocketId);
+
+  const leftTeam = myInTeam1 ? team1 : team2;
+  const rightTeam = myInTeam1 ? team2 : team1;
+  const leftScore = myInTeam1 ? room.team1Score : room.team2Score;
+  const rightScore = myInTeam1 ? room.team2Score : room.team1Score;
+
+  const team1Title = document.createElement("div");
+  team1Title.className = "team-title";
+  team1Title.textContent = `ÉQUIPE — ${leftScore ?? 0} pts`;
+  teamAPlayers.appendChild(team1Title);
+
+  leftTeam.forEach((player) => {
+    teamAPlayers.appendChild(createPlayerCard(room, player, "left"));
+  });
+
+  const team2Title = document.createElement("div");
+  team2Title.className = "team-title";
+  team2Title.textContent = `ADVERSAIRES — ${rightScore ?? 0} pts`;
+  teamBPlayers.appendChild(team2Title);
+
+  rightTeam.forEach((player) => {
+    teamBPlayers.appendChild(createPlayerCard(room, player, "right"));
+  });
+}
+
+function renderFFA(room) {
+  leftSide.classList.add("hidden");
+  rightSide.classList.add("hidden");
+  ffaLayout.classList.remove("hidden");
+
+  playersGrid.innerHTML = "";
+
+  const playersOrdered = [...room.players].sort((a, b) => {
+    if (a.id === mySocketId) return -1;
+    if (b.id === mySocketId) return 1;
+    return b.score - a.score;
+  });
+
+  playersOrdered.forEach((player) => {
+    const side = player.id === mySocketId ? "left" : "right";
+    playersGrid.appendChild(createPlayerCard(room, player, side));
+  });
+}
+
+function renderPlayers(room) {
+  if (room.mode === "ffa") {
+    renderFFA(room);
+    return;
+  }
+
+  if (room.mode === "2v2") {
+    render2v2(room);
+    return;
+  }
+
+  render1v1(room);
+}
+
+function renderPokemon(pokemon) {
+  if (!pokemon) {
+    pokemonSprite.src = "";
+    pokemonSprite.style.visibility = "hidden";
+    pokemonName.textContent = "En attente...";
+    return;
+  }
+
+  const image = getPokemonImage(pokemon);
+
+  if (image) {
+    pokemonSprite.src = image;
     pokemonSprite.style.visibility = "visible";
-    pokemonName.textContent = room.currentPokemon.name;
   } else {
     pokemonSprite.src = "";
     pokemonSprite.style.visibility = "hidden";
-    pokemonName.textContent = "En attente du lancement...";
   }
 
-  startGameBtn.classList.toggle("hidden", room.started || !isHost());
-  restartGameBtn.classList.toggle(
-    "hidden",
-    room.started || !isHost() || !room.winnerId
-  );
-  startGameBtn.disabled = !!(isHost() && room.players.length < 2);
-
-  renderPlayerStatsColumns();
-  renderUsedStats();
+  pokemonName.textContent = getPokemonDisplayName(pokemon);
 }
 
-function showReveal(text) {
-  const pill = document.createElement("div");
-  pill.className = "reveal-pill";
-  pill.textContent = text;
-  revealZone.appendChild(pill);
+function renderCenterText(room) {
+  if (!room.started) {
+    centerSubText.textContent = "En attente";
+    return;
+  }
+
+  const chosen = getMyChosenStat(room);
+
+  if (!isMyTurn(room)) {
+    centerSubText.textContent = "Tu ne joues pas ce tour";
+    return;
+  }
+
+  if (chosen) {
+    centerSubText.textContent = "Choix verrouillé";
+    return;
+  }
+
+  centerSubText.textContent = "Choisis une statistique";
+}
+
+function renderRound(room) {
+  roundLabel.textContent = `Tour ${room.round || 1}`;
+  suddenDeathLabel.classList.toggle("hidden", !room.suddenDeath);
+}
+
+function renderButtons(room) {
+  startGameBtn.classList.toggle("hidden", room.started || !isHost(room));
+  restartGameBtn.classList.toggle("hidden", room.started || !isHost(room) || !room.winners?.length);
+}
+
+function renderRoomMeta(room) {
+  roomCodeDisplay.textContent = room.code;
+  roomModeDisplay.textContent = `Mode : ${room.mode.toUpperCase()}`;
+  roomGensDisplay.textContent = `Gen : ${formatGenerations(room.generations)}`;
+
+  if (!room.started) {
+    roomStatus.textContent = "En attente...";
+  } else if (room.suddenDeath) {
+    roomStatus.textContent = "Mort subite";
+  } else {
+    roomStatus.textContent = "Partie en cours";
+  }
+}
+
+function renderRoom(room) {
+  currentRoom = room;
+  showScreen(roomScreen);
+  renderRoomMeta(room);
+  renderRound(room);
+  renderPokemon(room.currentPokemon);
+  renderCenterText(room);
+  renderButtons(room);
+  renderPlayers(room);
+}
+
+function showRevealResult(data) {
+  revealZone.innerHTML = "";
+
+  if (!data?.picks?.length) return;
+
+  data.picks.forEach((pick) => {
+    const row = document.createElement("div");
+    row.className = "reveal-row";
+    row.textContent = `${pick.playerName} • ${pick.statLabel} = ${pick.value} • Score : ${pick.newScore}`;
+    revealZone.appendChild(row);
+  });
+}
+
+function showGameOver(data) {
+  if (!data) return;
+
+  if (data.mode === "2v2") {
+    const names1 = (data.team1 || []).map((p) => p.name).join(" + ");
+    const names2 = (data.team2 || []).map((p) => p.name).join(" + ");
+
+    if ((data.team1Score ?? 0) > (data.team2Score ?? 0)) {
+      setMessage(gameMessage, `Victoire : ${names1} (${data.team1Score} à ${data.team2Score})`);
+    } else if ((data.team2Score ?? 0) > (data.team1Score ?? 0)) {
+      setMessage(gameMessage, `Victoire : ${names2} (${data.team2Score} à ${data.team1Score})`);
+    } else {
+      setMessage(gameMessage, "Égalité parfaite");
+    }
+
+    return;
+  }
+
+  if (data.ranking) {
+    const rankingText = data.ranking
+      .map((p, i) => `${i + 1}. ${p.name} (${p.score})`)
+      .join(" | ");
+
+    if (data.winnerName) {
+      setMessage(gameMessage, `Vainqueur : ${data.winnerName} — ${rankingText}`);
+    } else {
+      setMessage(gameMessage, rankingText);
+    }
+
+    return;
+  }
+
+  if (data.winnerName) {
+    setMessage(gameMessage, `Vainqueur : ${data.winnerName}`);
+  }
 }
 
 createRoomBtn.addEventListener("click", () => {
-  const name = playerNameInput.value.trim();
+  const name = getPlayerName();
+  const mode = gameModeSelect.value;
+  const generations = getSelectedGenerations();
 
-  if (!name) {
-    setMessage("Entre un pseudo.", homeMessage);
-    return;
-  }
+  socket.emit("createRoom", {
+    name,
+    mode,
+    generations
+  });
 
-  socket.emit("createRoom", { name });
-  setMessage("", homeMessage);
+  setMessage(homeMessage, "");
 });
 
 joinRoomBtn.addEventListener("click", () => {
-  const name = playerNameInput.value.trim();
-  const code = roomCodeInput.value.trim().toUpperCase();
-
-  if (!name) {
-    setMessage("Entre un pseudo.", homeMessage);
-    return;
-  }
+  const name = getPlayerName();
+  const code = (roomCodeInput.value || "").trim().toUpperCase();
 
   if (!code) {
-    setMessage("Entre un code salon.", homeMessage);
+    setMessage(homeMessage, "Entre un code salon.", true);
     return;
   }
 
   socket.emit("joinRoom", { code, name });
-  setMessage("", homeMessage);
 });
 
 startGameBtn.addEventListener("click", () => {
-  resetBoardVisual();
-  setMessage("");
   socket.emit("startGame");
 });
 
 restartGameBtn.addEventListener("click", () => {
-  resetBoardVisual();
-  setMessage("");
   socket.emit("restartGame");
 });
 
-statButtons.forEach((btn) => {
+copyCodeBtn.addEventListener("click", async () => {
+  const code = roomCodeDisplay.textContent.trim();
+  if (!code || code === "-") return;
+
+  try {
+    await navigator.clipboard.writeText(code);
+    const old = copyCodeBtn.textContent;
+    copyCodeBtn.textContent = "✅";
+    setTimeout(() => {
+      copyCodeBtn.textContent = old;
+    }, 1000);
+  } catch {
+    //
+  }
+});
+
+selectAllGensBtn.addEventListener("click", () => {
+  selectedGens = [1, 2, 3, 4, 5, 6, 7, 8, 9];
+  updateGenButtonsUI();
+});
+
+clearAllGensBtn.addEventListener("click", () => {
+  selectedGens = [];
+  updateGenButtonsUI();
+});
+
+genButtons.forEach((btn) => {
   btn.addEventListener("click", () => {
-    if (!myRoomState?.started) return;
-    socket.emit("chooseStat", { statKey: btn.dataset.stat });
-    setMessage("Choix envoyé...");
+    const gen = Number(btn.dataset.gen);
+
+    if (selectedGens.includes(gen)) {
+      selectedGens = selectedGens.filter((g) => g !== gen);
+    } else {
+      selectedGens.push(gen);
+      selectedGens.sort((a, b) => a - b);
+    }
+
+    updateGenButtonsUI();
   });
 });
 
-socket.on("roomState", (room) => {
-  myRoomState = room;
+roomCodeInput.addEventListener("input", () => {
+  roomCodeInput.value = roomCodeInput.value.toUpperCase().replace(/[^A-Z0-9]/g, "");
+});
 
-  if (Date.now() < animationLockUntil) {
-    return;
+playerNameInput.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") {
+    createRoomBtn.click();
   }
+});
 
+socket.on("roomState", (room) => {
   renderRoom(room);
 });
 
 socket.on("gameStarted", ({ pokemon }) => {
-  resetBoardVisual();
-  setMessage("La partie commence !");
-  pokemonSprite.src = pokemon.sprite;
-  pokemonSprite.style.visibility = "visible";
-  pokemonName.textContent = pokemon.name;
+  revealZone.innerHTML = "";
+  setMessage(gameMessage, "");
+  renderPokemon(pokemon);
+
+  if (currentRoom) {
+    currentRoom.currentPokemon = pokemon;
+  }
 });
 
-socket.on("turnResult", ({ picks }) => {
-  revealZone.innerHTML = "";
+socket.on("turnResult", (data) => {
+  lastTurnAnimatedStats = (data.picks || []).map((pick) => ({
+    playerId: pick.playerId,
+    statKey: pick.statKey
+  }));
 
-  for (const pick of picks) {
-    showReveal(`${pick.playerName} : ${pick.statLabel} = ${pick.value}`);
+  if (currentRoom) {
+    currentRoom.usedStatsByPlayer = data.usedStatsByPlayer || {};
+    currentRoom.playerStatValues = data.playerStatValues || {};
+    currentRoom.choices = {};
   }
 
-  if (!myRoomState) {
-    setMessage("Tour terminé.");
-    return;
+  showRevealResult(data);
+
+  if (currentRoom) {
+    renderPlayers(currentRoom);
+    renderCenterText(currentRoom);
   }
 
-  animationLockUntil = Date.now() + 3500;
+  requestAnimationFrame(() => {
+    queueRevealAnimations(data);
+  });
 
-  const p1 = myRoomState.players[0];
-  const p2 = myRoomState.players[1];
+  if (currentRoom && currentRoom.mode === "1v1" && data?.picks?.length >= 2) {
+    const me = getMyPlayer(currentRoom);
+    const opponent = getOpponentPlayer(currentRoom);
 
-  const p1Values = myRoomState.playerStatValues?.[p1?.id] || {};
-  const p2Values = myRoomState.playerStatValues?.[p2?.id] || {};
+    const myPick = data.picks.find((p) => p.playerId === mySocketId);
+    const enemyPick = data.picks.find((p) => p.playerId !== mySocketId);
 
-  player1StatsList.innerHTML = "";
-  player2StatsList.innerHTML = "";
-
-  for (const stat of STAT_ORDER) {
-    const p1Value = Object.prototype.hasOwnProperty.call(p1Values, stat.key)
-      ? p1Values[stat.key]
-      : null;
-
-    const p2Value = Object.prototype.hasOwnProperty.call(p2Values, stat.key)
-      ? p2Values[stat.key]
-      : null;
-
-    player1StatsList.appendChild(
-      createStatRow(stat.key, stat.label, p1Value, p1?.id)
-    );
-
-    player2StatsList.appendChild(
-      createStatRow(stat.key, stat.label, p2Value, p2?.id)
-    );
-  }
-
-  for (const pick of picks) {
-    const key = getAnimKey(pick.playerId, pick.statKey);
-    activeAnimations[key] = 1;
-
-    const targetList = pick.playerId === p1?.id ? player1StatsList : player2StatsList;
-    const row = [...targetList.querySelectorAll(".stat-row")].find(
-      (r) => r.dataset.statKey === pick.statKey
-    );
-
-    if (!row) continue;
-
-    const valueEl = row.querySelector(".stat-value, .stat-empty");
-    if (!valueEl) continue;
-
-    valueEl.className = "stat-value";
-
-    animateCount(valueEl, pick.value, () => {
-      activeAnimations[key] = pick.value;
-    });
-  }
-
-  setMessage("Tour terminé.");
-
-  setTimeout(() => {
-    animationLockUntil = 0;
-    if (myRoomState) {
-      renderRoom(myRoomState);
+    if (me && opponent && myPick && enemyPick) {
+      showDuelOverlay(
+        me.name,
+        myPick.value,
+        opponent.name,
+        enemyPick.value,
+        {
+          hideAfter: 2100,
+          leftDuration: 1200,
+          rightDuration: 1200
+        }
+      );
     }
-  }, 3600);
+  }
 });
 
 socket.on("nextPokemon", ({ pokemon, round }) => {
-  revealZone.innerHTML = "";
-  setMessage("Nouveau Pokémon !");
-  pokemonSprite.src = pokemon.sprite;
-  pokemonSprite.style.visibility = "visible";
-  pokemonName.textContent = pokemon.name;
+  if (currentRoom) {
+    currentRoom.currentPokemon = pokemon;
+    currentRoom.round = round;
+    currentRoom.choices = {};
+  }
 
-  if (!myRoomState?.suddenDeath) {
-    roundLabel.textContent = `Tour ${round}`;
+  revealZone.innerHTML = "";
+  renderPokemon(pokemon);
+  roundLabel.textContent = `Tour ${round}`;
+
+  if (currentRoom) {
+    renderCenterText(currentRoom);
+    renderPlayers(currentRoom);
   }
 });
 
-socket.on("suddenDeath", ({ pokemon, message }) => {
+socket.on("suddenDeath", ({ message, pokemon }) => {
+  if (currentRoom) {
+    currentRoom.suddenDeath = true;
+    currentRoom.currentPokemon = pokemon;
+    currentRoom.choices = {};
+    currentRoom.round = 1;
+  }
+
+  setMessage(gameMessage, message || "Mort subite !");
+  suddenDeathLabel.classList.remove("hidden");
   revealZone.innerHTML = "";
-  setMessage(message || "Égalité ! Mort subite !");
-  pokemonSprite.src = pokemon.sprite;
-  pokemonSprite.style.visibility = "visible";
-  pokemonName.textContent = pokemon.name;
-  roundLabel.textContent = "Mort subite";
+  renderPokemon(pokemon);
+
+  if (currentRoom) {
+    renderCenterText(currentRoom);
+    renderPlayers(currentRoom);
+  }
 });
 
-socket.on("gameOver", ({ winnerId, winnerName, score1, score2, suddenDeath }) => {
-  if (winnerId === mySocketId) {
-    setMessage(
-      `Victoire ! ${winnerName} gagne (${score1} - ${score2})${
-        suddenDeath ? " après mort subite" : ""
-      }.`
-    );
-  } else {
-    setMessage(
-      `${winnerName} gagne (${score1} - ${score2})${
-        suddenDeath ? " après mort subite" : ""
-      }.`
-    );
-  }
+socket.on("gameOver", (data) => {
+  showGameOver(data);
+  restartGameBtn.classList.remove("hidden");
+  startGameBtn.classList.add("hidden");
 });
 
 socket.on("errorMessage", (message) => {
-  if (roomScreen.classList.contains("active")) {
-    setMessage(message);
-  } else {
-    setMessage(message, homeMessage);
-  }
+  setMessage(homeMessage, message, true);
+  setMessage(gameMessage, message, true);
 });
 
-copyCodeBtn.addEventListener("click", () => {
-  const code = roomCodeDisplay.textContent;
-
-  if (!code || code === "-") return;
-
-  navigator.clipboard.writeText(code);
-
-  copyCodeBtn.textContent = "✅";
-
-  setTimeout(() => {
-    copyCodeBtn.textContent = "📋";
-  }, 1000);
-});
+updateGenButtonsUI();
